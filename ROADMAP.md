@@ -28,13 +28,16 @@ This document outlines the strategic roadmap and suggested improvements for the 
 - **RLS Policies**:
   - Enhance policies to be strictly role-based (e.g., Parent sees only their children, Driver sees only their trip).
   - Add organization-level RLS for multi-school support.
-- **Testing**:
-  - Implement RLS tests using `pgTAP`.
+- **RLS Testing (High Priority)**:
+  - Implement comprehensive RLS tests using `pgTAP` to verify that each role can only access the data it is permitted to. This is critical for security assurance.
+- **Data Migration Strategy**:
+  - Develop scripts to migrate data from the legacy schema (old `users`, `students` tables) to the new organization-centric schema (`user_profiles`, `children`).
 
 ## 3. Edge Functions (Logic)
 
 - **`auth-signup`**: A new function to handle sign-ups, check for invitations, set custom JWT claims for the user's role, and create a user profile.
-- **`trip-start` / `trip-end`**: Enhance functions to manage the full trip lifecycle and save historical records.
+  - **Enhancement**: Consider supporting multiple roles per user (e.g., a `roles: []` array in JWT claims).
+- **Full Function Refactoring**: All existing functions (`trip-start`, `trip-end`, `location-push`, etc.) must be refactored to work with the new organization-scoped schema.
 - **`notify-geofence`**: A dedicated function to handle sending FCM notifications to parents based on geofence events.
 - **`alerts`**: A function to generate alerts for trip delays or other incidents.
 
@@ -52,7 +55,7 @@ This document outlines the strategic roadmap and suggested improvements for the 
 
 - **GitHub Actions**:
   - Set up a CI pipeline to lint, test, and build each application on push/PR.
-  - Add a workflow to apply database migrations to a test environment before merging.
+  - **Staging Environment**: Add a workflow to apply database migrations and run `pgTAP` tests against a dedicated staging Supabase project before allowing a merge to the `main` branch.
 - **Versioning**:
   - Implement `release-please` for automated release versioning.
 - **Code Quality**:
@@ -86,3 +89,8 @@ This document outlines the strategic roadmap and suggested improvements for the 
   - Ensure full i18n support for Arabic and English across all UIs.
 - **Onboarding**:
   - Improve the first-time user experience with guided onboarding screens.
+
+## 9. Code Quality & Consistency
+
+- **Naming Conventions**:
+  - Enforce consistent naming across the entire stack. For example, standardize on `guardian` vs. `parent`, `child` vs. `student` in all tables, views, functions, and frontend code to improve clarity and maintainability.
