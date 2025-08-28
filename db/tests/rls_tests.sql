@@ -1,0 +1,49 @@
+-- pgTAP tests for Row-Level Security Policies
+--
+-- This file is a placeholder to demonstrate where RLS tests would be located.
+-- Supabase allows running pgTAP tests, which are crucial for verifying
+-- that RLS policies work as expected.
+--
+-- These tests would be run in a CI/CD pipeline against a test database
+-- to ensure that changes to policies do not introduce security vulnerabilities.
+--
+-- Example of what a test might look like:
+--
+-- CREATE EXTENSION IF NOT EXISTS pgtap;
+--
+-- BEGIN;
+--
+-- SELECT plan(3); -- Number of tests to run
+--
+-- -- Test Setup: Create mock users and data
+-- INSERT INTO public.organizations (id, name) VALUES ('test-org-id', 'Test Org');
+-- INSERT INTO auth.users (id, email) VALUES ('test-parent-id', 'parent@test.com');
+-- INSERT INTO public.user_profiles (user_id, organization_id, role) VALUES ('test-parent-id', 'test-org-id', 'parent');
+-- -- ... more setup ...
+--
+-- -- Test 1: Check if a parent can see their own child
+-- SET "request.jwt.claims" TO '{"app_role": "parent", "organization_id": "test-org-id"}';
+-- PERFORM set_config('role', 'authenticated', true);
+-- PERFORM set_config('auth.uid', 'test-parent-id', true);
+--
+-- SELECT is(
+--     (SELECT count(*)::int FROM public.children),
+--     1,
+--     'Parent should be able to see their own child.'
+-- );
+--
+-- -- Test 2: Check if a parent CANNOT see another child
+-- SELECT is(
+--     (SELECT count(*)::int FROM public.children WHERE id = 'other-child-id'),
+--     0,
+--     'Parent should NOT be able to see other children.'
+-- );
+--
+-- -- Test 3: Check if an admin can see all children in the org
+-- -- ...
+--
+-- SELECT * FROM finish();
+--
+-- ROLLBACK;
+
+SELECT 'pgTAP test file placeholder created.' as result;

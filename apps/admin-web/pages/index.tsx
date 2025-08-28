@@ -21,9 +21,10 @@ const mockReport = [
     { student: 'مازن الزهراني', status: 'absent', time: '06:45 AM' },
 ];
 
-const mockOnboardingRequests = [
-    { id: 'req_1', parent: 'أم نورة', student_name: 'نورة', status: 'pending' },
-    { id: 'req_2', parent: 'أبو خالد', student_name: 'خالد', status: 'pending' },
+const mockInvitations = [
+    { id: 'inv_1', email: 'parent@test.com', role: 'parent', status: 'pending', expires_at: '2023-10-05' },
+    { id: 'inv_2', email: 'driver@test.com', role: 'driver', status: 'pending', expires_at: '2023-10-06' },
+    { id: 'inv_3', email: 'old@test.com', role: 'parent', status: 'accepted', expires_at: '2023-09-01' },
 ];
 
 const mockAssignments = [
@@ -33,13 +34,6 @@ const mockAssignments = [
 
 
 // --- COMPONENTS ---
-const LiveMap = () => (
-    <div style={{ height: '400px', background: '#e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}>
-        <p>Live Map Placeholder</p>
-        {/* TODO: Integrate Google Maps SDK and plot bus markers from mockBuses or live data */}
-    </div>
-);
-
 const CrudTable = ({ title, data, actions }: { title: string, data: any[], actions?: any }) => (
     <div>
         <h3>{title}</h3>
@@ -59,25 +53,15 @@ const CrudTable = ({ title, data, actions }: { title: string, data: any[], actio
                 ))}
             </tbody>
         </table>
-        <button>Add New</button>
+        <button style={{ marginTop: '1rem' }}>+ Invite New User</button>
     </div>
 );
 
-const OnboardingDashboard = () => {
-    const approveRequest = (id: string) => {
-        // TODO: Call '/approve-onboarding-request' Edge Function
-        // supabase.functions.invoke('approve-onboarding-request', { body: { request_id: id, bus_id: '...' }})
-        alert(`Approving request ${id}...`);
-    };
-
+const InvitationsDashboard = () => {
     const actions = (row: any) => (
-        <>
-            <button onClick={() => approveRequest(row.id)} style={{ color: 'green' }}>Approve</button>
-            <button style={{ color: 'red' }}>Reject</button>
-        </>
+        row.status === 'pending' ? <button style={{ color: 'red' }}>Revoke</button> : null
     );
-
-    return <CrudTable title="Pending Student Onboarding Requests" data={mockOnboardingRequests} actions={actions} />;
+    return <CrudTable title="User Invitations" data={mockInvitations} actions={actions} />;
 };
 
 const AssignmentsDashboard = () => {
@@ -92,41 +76,38 @@ const AssignmentsDashboard = () => {
 
 
 const AdminPage: NextPage = () => {
-  const [activeView, setActiveView] = useState('onboarding');
+  const [activeView, setActiveView] = useState('invitations');
 
   const renderView = () => {
     switch (activeView) {
-      case 'onboarding':
-        return <OnboardingDashboard />;
+      case 'invitations':
+        return <InvitationsDashboard />;
       case 'assignments':
         return <AssignmentsDashboard />;
       case 'users':
         return <CrudTable title="Manage Users" data={mockUsers} />;
       case 'routes':
         return <p>CRUD for Routes and Stops placeholder.</p>;
-       case 'live_map':
-        return <LiveMap />;
       default:
-        return <OnboardingDashboard />;
+        return <InvitationsDashboard />;
     }
   };
 
   return (
     <div style={{ display: 'flex', fontFamily: 'sans-serif' }}>
       <aside style={{ width: '220px', background: '#f4f4f4', padding: '1rem', height: '100vh' }}>
-        <h2>General Supervisor</h2>
+        <h2>Admin Dashboard</h2>
         <nav>
           <ul style={{ listStyle: 'none', padding: 0 }}>
-            <li style={{ marginBottom: '10px' }}><button onClick={() => setActiveView('onboarding')}>Onboarding Requests</button></li>
+            <li style={{ marginBottom: '10px' }}><button onClick={() => setActiveView('invitations')}>Invitations</button></li>
             <li style={{ marginBottom: '10px' }}><button onClick={() => setActiveView('assignments')}>Bus Assignments</button></li>
             <li style={{ marginBottom: '10px' }}><button onClick={() => setActiveView('routes')}>Manage Routes</button></li>
             <li style={{ marginBottom: '10px' }}><button onClick={() => setActiveView('users')}>Manage Users</button></li>
-            <li style={{ marginBottom: '10px' }}><button onClick={() => setActiveView('live_map')}>Live Map</button></li>
           </ul>
         </nav>
       </aside>
       <main style={{ flex: 1, padding: '2rem' }}>
-        <h1>School Bus Admin</h1>
+        <h1>School Bus Management</h1>
         {renderView()}
       </main>
     </div>

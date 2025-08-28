@@ -30,17 +30,13 @@ serve(async (req) => {
       })
     }
 
-    const { data: profile, error: profileError } = await supabase
-      .from('users')
-      .select('role')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (profileError || !profile || profile.role !== 'driver') {
-      return new Response(JSON.stringify({ error: 'Forbidden: User is not a driver' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 403,
-      })
+    // The user's role is now determined by JWT claims, but we can verify against the profile.
+    const userRole = (await supabase.auth.getUser()).data.user?.app_metadata?.app_role;
+    if (userRole !== 'driver') {
+         return new Response(JSON.stringify({ error: 'Forbidden: User is not a driver' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 403,
+        });
     }
 
     // 2. Get and validate trip_id from request body
@@ -66,13 +62,7 @@ serve(async (req) => {
       })
     }
 
-    const { data: driverProfile } = await supabase
-      .from('users')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
-
-    if (trip.driver_id !== driverProfile?.id) {
+    if (trip.driver_id !== user.id) {
         return new Response(JSON.stringify({ error: 'Forbidden: Trip does not belong to this driver' }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             status: 403,

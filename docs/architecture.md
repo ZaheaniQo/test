@@ -6,8 +6,8 @@ This document outlines the high-level architecture of the School Bus Tracking MV
 
 The project is developed within a single monorepo to streamline development, dependency management, and code sharing.
 
-- **Frontend (Mobile)**: Two Flutter applications, `driver-app` and `parent-app`, designed for iOS and Android. They share a common business logic but have role-specific UIs.
-- **Frontend (Web)**: A minimal Next.js (React) application, `admin-web`, for administrative tasks.
+- **Frontend (Mobile)**: A single, unified Flutter application (`/apps/mobile`) for both Parents and Drivers. The UI and features presented to the user are determined by their role, which is assigned upon login via JWT claims.
+- **Frontend (Web)**: A Next.js (React) application (`/apps/admin-web`) for Administrators and General Supervisors.
 - **Backend**: Supabase serves as the primary backend-as-a-service (BaaS).
   - **Database**: Supabase Postgres for data storage.
   - **Authentication**: Supabase Auth for managing users (parents, drivers, admins).

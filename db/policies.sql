@@ -1,218 +1,128 @@
--- School Bus App RLS Policies
--- version 1.0
+-- RLS Policies for Organization-centric Schema (v2.0)
+-- These policies are designed for the new schema and rely on JWT custom claims.
+
+-- Helper function to get a claim from the current user's JWT
+CREATE OR REPLACE FUNCTION auth.get_my_claim(claim TEXT)
+RETURNS JSONB AS $$
+    SELECT coalesce(current_setting('request.jwt.claims', true)::jsonb->>claim, null)::jsonb;
+$$ LANGUAGE sql STABLE;
+
+-- Helper function to get the organization_id of the current user
+CREATE OR REPLACE FUNCTION public.get_my_org_id()
+RETURNS UUID AS $$
+    SELECT (auth.get_my_claim('organization_id')->>0)::UUID;
+$$ LANGUAGE sql STABLE;
 
 -- Helper function to get the role of the current user
-CREATE OR REPLACE FUNCTION get_my_role()
+CREATE OR REPLACE FUNCTION public.get_my_role()
 RETURNS TEXT AS $$
-DECLARE
-    role TEXT;
-BEGIN
-    SELECT raw_user_meta_data->>'role' INTO role
-    FROM auth.users
-    WHERE id = auth.uid();
-    RETURN role;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Helper function to get the user ID from our public users table
-CREATE OR REPLACE FUNCTION get_my_user_id()
-RETURNS UUID AS $$
-DECLARE
-    user_id UUID;
-BEGIN
-    SELECT id INTO user_id
-    FROM public.users
-    WHERE auth_id = auth.uid();
-    RETURN user_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+    SELECT auth.get_my_claim('app_role')->>0;
+$$ LANGUAGE sql STABLE;
 
 
 --==============================================================
--- Enable RLS on all tables
+-- Enable RLS on all relevant tables
 --==============================================================
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.parents_students ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.schools ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.branches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.invitations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.children ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.child_guardians ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.buses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bus_supervisors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.routes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.route_stops ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trips ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.locations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.attendance_confirmations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chats ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 --==============================================================
 -- RLS Policies
 --==============================================================
 
 -- -------------------------------------------------------------
--- Table: users
+-- Table: organizations & branches
 -- -------------------------------------------------------------
--- Admins can do anything.
-CREATE POLICY "Allow admin full access on users" ON public.users
+-- Users can only see the organization they belong to.
+CREATE POLICY "Allow users to see their own organization" ON public.organizations
+    FOR SELECT USING (id = get_my_org_id());
+CREATE POLICY "Allow users to see branches in their organization" ON public.branches
+    FOR SELECT USING (organization_id = get_my_org_id());
+-- Only admins can manage orgs/branches.
+CREATE POLICY "Allow admins to manage organizations" ON public.organizations
     FOR ALL USING (get_my_role() = 'admin');
--- Users can view their own profile.
-CREATE POLICY "Allow users to view their own profile" ON public.users
-    FOR SELECT USING (auth_id = auth.uid());
--- Parents can see the driver of the bus their child is on today.
-CREATE POLICY "Allow parents to see their child's driver" ON public.users
-    FOR SELECT USING (
-        get_my_role() = 'parent' AND
-        role = 'driver' AND
-        EXISTS (
-            SELECT 1
-            FROM trips t
-            JOIN route_stops rs ON t.route_id = rs.route_id
-            JOIN parents_students ps ON rs.student_id = ps.student_id
-            WHERE t.driver_id = users.id
-              AND ps.parent_id = get_my_user_id()
-              AND t.trip_date = current_date
-        )
+CREATE POLICY "Allow admins to manage branches" ON public.branches
+    FOR ALL USING (get_my_role() = 'admin');
+
+
+-- -------------------------------------------------------------
+-- Table: user_profiles
+-- -------------------------------------------------------------
+-- Users can see their own profile.
+CREATE POLICY "Allow users to see their own profile" ON public.user_profiles
+    FOR SELECT USING (user_id = auth.uid());
+-- Admins can see all profiles within their organization.
+CREATE POLICY "Allow admins to see org profiles" ON public.user_profiles
+    FOR SELECT USING (organization_id = get_my_org_id() AND get_my_role() = 'admin');
+
+
+-- -------------------------------------------------------------
+-- Table: children & child_guardians
+-- -------------------------------------------------------------
+-- Parents (guardians) can see their own children.
+CREATE POLICY "Parents can see their own children" ON public.children
+    FOR SELECT USING (id IN (SELECT child_id FROM public.child_guardians WHERE guardian_id = auth.uid()));
+-- Admins/Supervisors can see all children in their organization.
+CREATE POLICY "Admins and supervisors can see org children" ON public.children
+    FOR SELECT USING (organization_id = get_my_org_id() AND get_my_role() IN ('admin', 'general_supervisor', 'bus_supervisor'));
+
+-- For child_guardians junction table
+CREATE POLICY "Parents can see their own guardian links" ON public.child_guardians
+    FOR SELECT USING (guardian_id = auth.uid());
+CREATE POLICY "Admins can manage guardian links in their org" ON public.child_guardians
+    FOR ALL USING (
+        get_my_role() = 'admin' AND
+        EXISTS (SELECT 1 FROM children WHERE id = child_id AND organization_id = get_my_org_id())
     );
 
--- -------------------------------------------------------------
--- Table: students & parents_students
--- -------------------------------------------------------------
-CREATE POLICY "Allow admin full access on students" ON public.students
-    FOR ALL USING (get_my_role() = 'admin');
-CREATE POLICY "Allow parents to see their own children" ON public.students
-    FOR SELECT USING (EXISTS (
-        SELECT 1 FROM parents_students ps
-        WHERE ps.student_id = students.id AND ps.parent_id = get_my_user_id()
-    ));
--- Drivers can see students on the routes assigned to them.
-CREATE POLICY "Allow drivers to see students on their routes" ON public.students
-    FOR SELECT USING (
-        get_my_role() = 'driver' AND
-        EXISTS (
-            SELECT 1 FROM route_stops rs
-            JOIN routes r ON rs.route_id = r.id
-            JOIN buses b ON r.bus_id = b.id
-            WHERE rs.student_id = students.id AND b.driver_id = get_my_user_id()
-        )
-    );
-CREATE POLICY "Allow admin full access on parents_students" ON public.parents_students
-    FOR ALL USING (get_my_role() = 'admin');
-CREATE POLICY "Allow parents to see their own links" ON public.parents_students
-    FOR SELECT USING (parent_id = get_my_user_id());
-
 
 -- -------------------------------------------------------------
--- Table: schools
+-- Table: trips
 -- -------------------------------------------------------------
-CREATE POLICY "Allow admin full access on schools" ON public.schools
-    FOR ALL USING (get_my_role() = 'admin');
--- Any authenticated user can see the list of schools.
-CREATE POLICY "Allow authenticated users to view schools" ON public.schools
-    FOR SELECT USING (auth.role() = 'authenticated');
+-- Users can only see trips within their own organization.
+CREATE POLICY "Organization-level access for trips" ON public.trips
+    FOR ALL USING (organization_id = get_my_org_id())
+    WITH CHECK (organization_id = get_my_org_id());
 
--- -------------------------------------------------------------
--- Table: buses
--- -------------------------------------------------------------
-CREATE POLICY "Allow admin and general supervisors to manage buses" ON public.buses
-    FOR ALL USING (get_my_role() IN ('admin', 'general_supervisor'));
-CREATE POLICY "Allow authenticated users to view buses" ON public.buses
-    FOR SELECT USING (auth.role() = 'authenticated');
-
-
--- -------------------------------------------------------------
--- Table: trips, routes, route_stops, locations
--- Table: routes & route_stops (Assignments)
--- -------------------------------------------------------------
--- Only General Supervisors and Admins can create, update, or delete routes and stops.
-CREATE POLICY "Allow high-level users to manage routes" ON public.routes
-    FOR ALL USING (get_my_role() IN ('admin', 'general_supervisor'));
-CREATE POLICY "Allow high-level users to manage route stops" ON public.route_stops
-    FOR ALL USING (get_my_role() IN ('admin', 'general_supervisor'));
-
--- Drivers, Parents, and Supervisors need read access.
-CREATE POLICY "Allow drivers to see their assigned routes" ON public.routes
-    FOR SELECT USING (bus_id IN (SELECT id FROM buses WHERE driver_id = get_my_user_id()));
-CREATE POLICY "Allow drivers to see stops on their routes" ON public.route_stops
-    FOR SELECT USING (route_id IN (SELECT id FROM routes WHERE bus_id IN (SELECT id FROM buses WHERE driver_id = get_my_user_id())));
-
-CREATE POLICY "Allow bus supervisors to see their bus routes" ON public.routes
-    FOR SELECT USING (bus_id IN (SELECT bus_id FROM bus_supervisors WHERE supervisor_id = get_my_user_id()));
-CREATE POLICY "Allow bus supervisors to see stops on their bus routes" ON public.route_stops
-    FOR SELECT USING (route_id IN (SELECT id FROM routes WHERE bus_id IN (SELECT bus_id FROM bus_supervisors WHERE supervisor_id = get_my_user_id())));
-
-CREATE POLICY "Allow parents to see their child's route information" ON public.routes
-    FOR SELECT USING (EXISTS (
-        SELECT 1 FROM route_stops rs
-        JOIN parents_students ps ON ps.student_id = rs.student_id
-        WHERE rs.route_id = routes.id AND ps.parent_id = get_my_user_id()
-    ));
-
--- -------------------------------------------------------------
--- Table: trips & locations (Live Data)
--- -------------------------------------------------------------
-CREATE POLICY "Allow admin full access on trips" ON public.trips FOR ALL USING (get_my_role() = 'admin');
-CREATE POLICY "Allow admin full access on locations" ON public.locations FOR ALL USING (get_my_role() = 'admin');
-
--- Drivers can see their own trips and post locations.
-CREATE POLICY "Allow drivers to see their own trips" ON public.trips FOR SELECT USING (driver_id = get_my_user_id());
-CREATE POLICY "Allow drivers to insert their location" ON public.locations FOR INSERT
-    WITH CHECK (EXISTS (SELECT 1 FROM trips WHERE id = locations.trip_id AND driver_id = get_my_user_id()));
-
--- Parents and Supervisors can see live data for relevant trips.
-CREATE POLICY "Allow parents to see their child's trip" ON public.trips
-    FOR SELECT USING (EXISTS (
-        SELECT 1 FROM route_stops rs
-        JOIN parents_students ps ON ps.student_id = rs.student_id
-        WHERE rs.route_id = trips.route_id AND ps.parent_id = get_my_user_id()
-    ));
-
-CREATE POLICY "Allow parents to see location of their child's bus" ON public.locations
-    FOR SELECT USING (EXISTS (
-        SELECT 1 FROM trips t
+-- Role-specific SELECT policies
+CREATE POLICY "Parents can see their childrens trips" ON public.trips
+    FOR SELECT USING (id IN (
+        SELECT t.id FROM trips t
         JOIN route_stops rs ON t.route_id = rs.route_id
-        JOIN parents_students ps ON ps.student_id = rs.student_id
-        WHERE t.id = locations.trip_id AND ps.parent_id = get_my_user_id()
+        JOIN child_guardians cg ON rs.child_id = cg.child_id
+        WHERE cg.guardian_id = auth.uid()
     ));
 
-CREATE POLICY "Allow bus supervisors to see trips for their bus" ON public.trips
-    FOR SELECT USING (bus_id IN (SELECT bus_id FROM bus_supervisors WHERE supervisor_id = get_my_user_id()));
+CREATE POLICY "Drivers can see their own trips" ON public.trips
+    FOR SELECT USING (driver_id = auth.uid());
 
-CREATE POLICY "Allow bus supervisors to see locations for their bus" ON public.locations
-    FOR SELECT USING (bus_id IN (SELECT bus_id FROM bus_supervisors WHERE supervisor_id = get_my_user_id()));
+CREATE POLICY "Bus supervisors can see their bus trips" ON public.trips
+    FOR SELECT USING (bus_id IN (
+        SELECT b.id FROM buses b
+        JOIN bus_supervisors bs ON b.id = bs.bus_id
+        WHERE bs.supervisor_id = auth.uid()
+    ));
 
--- -------------------------------------------------------------
--- Table: events
--- -------------------------------------------------------------
-CREATE POLICY "Allow admin full access on events" ON public.events
-    FOR ALL USING (get_my_role() = 'admin');
--- Drivers can see all events for their trips.
-CREATE POLICY "Allow drivers to see events on their trips" ON public.events
-    FOR SELECT USING (trip_id IN (SELECT id FROM trips WHERE driver_id = get_my_user_id()));
--- Parents can only see events for their own children.
-CREATE POLICY "Allow parents to see events for their children" ON public.events
-    FOR SELECT USING (student_id IN (SELECT student_id FROM parents_students WHERE parent_id = get_my_user_id()));
--- Bus supervisors can see all events for their assigned bus's trips.
-CREATE POLICY "Allow bus supervisors to see events on their bus trips" ON public.events
-    FOR SELECT USING (trip_id IN (SELECT id FROM trips WHERE bus_id IN (SELECT bus_id FROM bus_supervisors WHERE supervisor_id = get_my_user_id())));
+-- Management is restricted to admins/supervisors
+CREATE POLICY "Admins and supervisors can manage trips" ON public.trips
+    FOR ALL USING (get_my_role() IN ('admin', 'general_supervisor'));
 
-
--- -------------------------------------------------------------
--- Table: chats
--- -------------------------------------------------------------
-CREATE POLICY "Allow admin full access on chats" ON public.chats
-    FOR ALL USING (get_my_role() = 'admin');
--- Users can see their own chats
-CREATE POLICY "Allow users to access their own chats" ON public.chats
-    FOR ALL USING (sender_id = get_my_user_id() OR recipient_id = get_my_user_id());
-
-
--- -------------------------------------------------------------
--- Table: settings and audit_logs (Admin only)
--- -------------------------------------------------------------
-CREATE POLICY "Allow admin full access on settings" ON public.settings
-    FOR ALL USING (get_my_role() = 'admin');
-CREATE POLICY "Allow admin full access on audit_logs" ON public.audit_logs
-    FOR ALL USING (get_my_role() = 'admin');
--- A more permissive policy could allow reading of non-sensitive keys
--- CREATE POLICY "Allow authenticated users to read some settings" ON public.settings
---     FOR SELECT USING (auth.role() = 'authenticated' AND value->>'is_sensitive' = 'false');
+-- Note: More specific policies for INSERT/UPDATE/DELETE can be added if needed,
+-- but the above provides a strong baseline.
+-- For example, a driver should only be able to UPDATE the status of their OWN trip.
+CREATE POLICY "Drivers can update their own trip status" ON public.trips
+    FOR UPDATE USING (driver_id = auth.uid())
+    WITH CHECK (driver_id = auth.uid());
