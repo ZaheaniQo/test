@@ -1,96 +1,69 @@
-# Project Roadmap & Proposed Improvements
+# 📌 Project Roadmap
 
-This document outlines the strategic roadmap and suggested improvements for the School Bus Tracking application, based on user feedback.
+## 🎯 Vision
+Build a secure, multi-tenant school bus management system with a unified **mobile app** (Parents & Drivers) and a **web-based Admin dashboard**. Ensure **data security, privacy by design, and role-based access** at all levels.
 
-## 1. Documentation
+---
 
-- **Environment Variables**:
-  - Add `.env.example` file to `apps/admin-web` (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `GOOGLE_MAPS_API_KEY`, `FCM_KEY`).
-  - Add `.env.example` file to `backend/edge-functions` (`SUPABASE_URL`, `SERVICE_ROLE_KEY`, `FCM_SERVER_KEY`).
-- **Standard Repository Files**:
-  - `CONTRIBUTING.md`: Guidelines for contributions.
-  - `SECURITY.md`: Instructions for reporting security vulnerabilities.
-  - `CODE_OF_CONDUCT.md`: Code of Conduct for the community.
-  - `LICENSE`: Project license file.
-- **README Updates**:
-  - Add detailed local setup and run steps for each application.
-  - Include a simplified architecture diagram (`apps ↔ backend ↔ DB`).
+## 🚀 Roadmap by Priority
 
-## 2. Database & RLS
+### 🟥 P0 – Critical (Q1–Q2)
 
-- **Schema Extensions**:
-  - `user_profiles`: For supplementary data post-authentication.
-  - `invitations`: To handle invites with pre-assigned roles.
-  - `organizations / branches`: To support multi-school or multi-branch setups.
-- **Database Views**:
-  - Create a view for a summary of the day's trips (for Admins).
-  - Create a view for student statuses on a trip (for Drivers).
-- **RLS Policies**:
-  - Enhance policies to be strictly role-based (e.g., Parent sees only their children, Driver sees only their trip).
-  - Add organization-level RLS for multi-school support.
-- **RLS Testing (High Priority)**:
-  - Implement comprehensive RLS tests using `pgTAP` to verify that each role can only access the data it is permitted to. This is critical for security assurance.
-- **Data Migration Strategy**:
-  - Develop scripts to migrate data from the legacy schema (old `users`, `students` tables) to the new organization-centric schema (`user_profiles`, `children`).
+| Area              | Task                                                                 | Timeline | KPIs / Acceptance Criteria |
+|-------------------|----------------------------------------------------------------------|----------|----------------------------|
+| **RLS Testing**   | Add **pgTAP** coverage for all role-specific policies                | Q1       | 100% SELECT/INSERT/UPDATE/DELETE coverage per role |
+| **Data Migration**| Create scripts to migrate legacy `users/students` → new schema       | Q1       | ≥99% data migrated successfully + rollback plan |
+| **Edge Functions**| Refactor (`auth-signup`, `trip-start`, `trip-end`, `notify-geofence`, `alerts`) to org-centric model | Q1–Q2    | All functions working with `organization_id` + RLS enforced |
+| **JWT Claims**    | Support **multi-role** (`app_roles: []`)                             | Q2       | Users with multiple roles handled correctly |
+| **CI/CD**         | Add **staging pipeline** (schema + pgTAP + build checks)             | Q2       | All commits validated in staging before `main` |
+| **Naming Rules**  | Define naming conventions across DB, API, and UI                     | Q2       | Linting/pre-commit check prevents violations |
 
-## 3. Edge Functions (Logic)
+---
 
-- **`auth-signup`**: A new function to handle sign-ups, check for invitations, set custom JWT claims for the user's role, and create a user profile.
-  - **Enhancement**: Consider supporting multiple roles per user (e.g., a `roles: []` array in JWT claims).
-- **Full Function Refactoring**: All existing functions (`trip-start`, `trip-end`, `location-push`, etc.) must be refactored to work with the new organization-scoped schema.
-- **`notify-geofence`**: A dedicated function to handle sending FCM notifications to parents based on geofence events.
-- **`alerts`**: A function to generate alerts for trip delays or other incidents.
+### 🟨 P1 – Important (Q2–Q3)
 
-## 4. Frontend Applications
+| Area              | Task                                                                 | Timeline | KPIs / Acceptance Criteria |
+|-------------------|----------------------------------------------------------------------|----------|----------------------------|
+| **Views**         | Optimize `admin_today_trips_v` & `driver_picklist_v` with indexes    | Q2       | <100ms response under 100k records |
+| **Privacy**       | Blur/approximate location outside trip windows                       | Q2–Q3    | No raw location exposed outside trip hours |
+| **Admin Web**     | Add **Invitations console** (CRUD, Resend, Revoke)                   | Q2       | Full invitation workflow functional |
+| **Admin Web**     | Add **Live Ops Dashboard** (Trips + Alerts + Map)                    | Q3       | Real-time updates + filtering |
+| **Mobile**        | Driver: Location streaming (batch + offline queue)                   | Q2–Q3    | ≤5% data loss in bad network |
+| **Mobile**        | Parent: Geofence notifications + preferences                         | Q2–Q3    | Alerts delivered only to relevant guardians |
+| **Code Quality**  | Generate Supabase Types + enforce ESLint/Prettier                    | Q2       | No lint errors in CI |
 
-- **Unified Mobile App (Flutter) `/apps/mobile`**:
-  - **Driver Features**: Implement trip start/end screen, periodic location broadcasting (with offline batching), student check-in/check-out list, and an emergency (SOS) button.
-  - **Parent Features**: Implement the live map with bus tracking, notifications for geofence events, and a daily attendance history screen.
-- **Admin Web (Next.js) `/apps/admin-web`**:
-  - **Dashboard**: Live trips, live map, and an alerts list.
-  - **Invitation Management**: A UI for creating and managing user invitations.
-  - **Organization Settings**: A UI for managing schools, routes, and default times.
+---
 
-## 5. CI/CD & Quality (DevOps)
+### 🟩 P2 – Enhancements (Q3–Q4)
 
-- **GitHub Actions**:
-  - Set up a CI pipeline to lint, test, and build each application on push/PR.
-  - **Staging Environment**: Add a workflow to apply database migrations and run `pgTAP` tests against a dedicated staging Supabase project before allowing a merge to the `main` branch.
-- **Versioning**:
-  - Implement `release-please` for automated release versioning.
-- **Code Quality**:
-  - Enforce ESLint/Prettier in all projects.
-- **Type Generation**:
-  - Use `supabase gen types typescript --local` to keep TypeScript types in sync with the database schema.
+| Area              | Task                                                                 | Timeline | KPIs / Acceptance Criteria |
+|-------------------|----------------------------------------------------------------------|----------|----------------------------|
+| **Security**      | Enable **Admin 2FA** + session/lockout policies                      | Q3       | 2FA enforced for all Admin users |
+| **Logging**       | Add correlation IDs + centralized logging (Logflare/Grafana)         | Q3–Q4    | End-to-end traceability per request |
+| **Backups**       | Daily backups + **PITR** + quarterly restore tests                   | Q4       | Successful restore ≤30 days |
+| **Docs**          | Update `ARCHITECTURE.md`, `PRIVACY.md`, `SECURITY.md` + diagrams     | Q4       | Docs aligned with final schema & flows |
 
-## 6. Security & Privacy
+---
 
-- **Authentication**:
-  - Enforce 2FA for Admin and General Supervisor accounts.
-- **Privacy Policy**:
-  - Create a formal privacy policy detailing data retention periods and deletion procedures.
-- **Privacy by Design**:
-  - Implement coordinate anonymization or generalization for trips after they are completed.
+## 📊 KPIs (Key Performance Indicators)
 
-## 7. Monitoring & Observability
+- ✅ 100% pgTAP coverage for RLS policies
+- ✅ ≥99% successful migration of legacy data
+- ✅ <100ms response time for critical views
+- ✅ ≤5% data loss in mobile location streaming
+- ✅ No raw location exposure outside trip windows
+- ✅ 2FA enforced for Admin accounts
+- ✅ Daily backups + quarterly restore tests passed
 
-- **Logging**:
-  - Integrate Edge Functions with a logging provider (e.g., Supabase Logs, Logflare).
-- **Alerting**:
-  - Configure GitHub Actions to send alerts on deployment failures.
-- **Dashboards**:
-  - Set up simple monitoring dashboards (using Grafana, Metabase, or Supabase's built-in dashboards) to track key metrics: number of trips, delay times, SOS alerts.
+---
 
-## 8. UX / UI
+## 📅 High-Level Timeline
 
-- **Design System**:
-  - Establish a unified design system (colors, icons, buttons) for all applications.
-- **Localization**:
-  - Ensure full i18n support for Arabic and English across all UIs.
-- **Onboarding**:
-  - Improve the first-time user experience with guided onboarding screens.
+| Quarter | Focus Areas                                                                 |
+|---------|------------------------------------------------------------------------------|
+| **Q1**  | Schema finalization, pgTAP tests, data migration                             |
+| **Q2**  | Edge Functions refactor, CI/CD staging, mobile role-based routing            |
+| **Q3**  | Privacy features, performance optimizations, Admin dashboard enhancements    |
+| **Q4**  | Security hardening (2FA, PITR), observability, full documentation refresh    |
 
-## 9. Code Quality & Consistency
-
-- **Naming Conventions**:
-  - Enforce consistent naming across the entire stack. For example, standardize on `guardian` vs. `parent`, `child` vs. `student` in all tables, views, functions, and frontend code to improve clarity and maintainability.
+---
